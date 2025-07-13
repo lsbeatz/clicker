@@ -1,1 +1,10 @@
 **/out
+
+# Ctag
+**/tags
+
+# Python
+**/.venv
+
+# Vim
+**/*.swp
