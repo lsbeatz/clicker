@@ -24,6 +24,30 @@ typedef struct {
 	char *last_text;
 } TextRenderer;
 
+// Global Game State
+long long g_money;
+int g_money_per_click;
+int g_money_per_second;
+Uint32 g_last_second_tick;
+Upgrade g_upgrades[4];
+
+// Global Text Renderers
+TextRenderer g_money_tr;
+TextRenderer g_click_power_tr;
+TextRenderer g_money_per_second_tr;
+TextRenderer g_upgrade_level_tr[4];
+TextRenderer g_upgrade_cost_tr[4];
+
+// Global Colors
+SDL_Color g_color_white						= { 255, 255, 255, 255 };
+SDL_Color g_color_black						= { 0, 0, 0, 255 };
+SDL_Color g_color_grey						= { 50, 50, 50, 255 };
+SDL_Color g_color_border					= { 20, 20, 20, 255 };
+SDL_Color g_color_cost_affordable			= { 100, 255, 100, 255 }; // Light Green
+SDL_Color g_color_cost_unaffordable			= { 255, 100, 100, 255 }; // Light Red
+SDL_Color g_color_border_affordable_hover	= { 0, 200, 0, 255 }; // Greenish
+SDL_Color g_color_border_unaffordable_hover = { 200, 0, 0, 255 }; // Reddish
+
 // Function to initialize TextRenderer
 void init_text_renderer(TextRenderer *tr)
 {
@@ -111,6 +135,188 @@ void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x
 	SDL_DestroyTexture(texture);
 }
 
+// Function Prototypes for refactoring
+void handle_keyboard_event(SDL_Event *event);
+void handle_mouse_button_down_event(SDL_Event *event);
+void process_events();
+void update_game_state();
+void render_top_info(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small);
+void render_upgrade_buttons(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small, SDL_Point mouse_point);
+void render_game(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small, SDL_Point mouse_point);
+
+// Function to handle keyboard events
+void handle_keyboard_event(SDL_Event *event)
+{
+	if (event->key.keysym.sym == SDLK_a) {
+		g_money += g_money_per_click;
+	} else if (event->key.keysym.sym == SDLK_q) {
+		// Simulate click for Q upgrade
+		if (g_money >= g_upgrades[0].cost) {
+			g_money -= g_upgrades[0].cost;
+			g_upgrades[0].level++;
+			g_upgrades[0].cost *= g_upgrades[0].cost_multiplier;
+			g_money_per_click				  = 1 + g_upgrades[0].level * 2;
+			g_upgrades[0].last_key_press_time = SDL_GetTicks();
+		}
+	} else if (event->key.keysym.sym == SDLK_w) {
+		// Simulate click for W upgrade
+		if (g_money >= g_upgrades[1].cost) {
+			g_money -= g_upgrades[1].cost;
+			g_upgrades[1].level++;
+			g_upgrades[1].cost *= g_upgrades[1].cost_multiplier;
+			g_money_per_second				  = g_upgrades[1].level * 1;
+			g_upgrades[1].last_key_press_time = SDL_GetTicks();
+		}
+	} else if (event->key.keysym.sym == SDLK_e) {
+		// Simulate click for E upgrade
+		if (g_money >= g_upgrades[2].cost) {
+			g_money -= g_upgrades[2].cost;
+			g_upgrades[2].level++;
+			g_upgrades[2].cost *= g_upgrades[2].cost_multiplier;
+			g_upgrades[2].last_key_press_time = SDL_GetTicks();
+		}
+	} else if (event->key.keysym.sym == SDLK_r) {
+		// Simulate click for R upgrade
+		if (g_money >= g_upgrades[3].cost) {
+			g_money -= g_upgrades[3].cost;
+			g_upgrades[3].level++;
+			g_upgrades[3].cost *= g_upgrades[3].cost_multiplier;
+			g_upgrades[3].last_key_press_time = SDL_GetTicks();
+		}
+	}
+}
+
+// Function to handle mouse button down events
+void handle_mouse_button_down_event(SDL_Event *event)
+{
+	if (event->button.button == SDL_BUTTON_LEFT) {
+		int mouse_x			  = event->button.x;
+		int mouse_y			  = event->button.y;
+		SDL_Point mouse_point = { mouse_x, mouse_y };
+
+		for (int i = 0; i < 4; i++) {
+			if (SDL_PointInRect(&mouse_point, &g_upgrades[i].rect)) {
+				if (g_money >= g_upgrades[i].cost) {
+					g_money -= g_upgrades[i].cost;
+					g_upgrades[i].level++;
+					g_upgrades[i].cost *= g_upgrades[i].cost_multiplier;
+
+					if (i == 0) { // Q - Click Power
+						g_money_per_click = 1 + g_upgrades[i].level * 2;
+					} else if (i == 1) { // W - Passive Income
+						g_money_per_second = g_upgrades[i].level * 1;
+					}
+				}
+			}
+		}
+	}
+}
+
+// Function to process all events
+void process_events()
+{
+	SDL_Event event;
+	while (SDL_PollEvent(&event)) {
+		if (event.type == SDL_QUIT) {
+			exit(0); // Exit the game
+		}
+		if (event.type == SDL_KEYDOWN) {
+			if (event.key.keysym.sym == SDLK_ESCAPE) {
+				exit(0); // Exit the game
+			}
+			handle_keyboard_event(&event);
+		}
+		if (event.type == SDL_MOUSEBUTTONDOWN) {
+			handle_mouse_button_down_event(&event);
+		}
+	}
+}
+
+// Function to update game state
+void update_game_state()
+{
+	if (SDL_GetTicks() - g_last_second_tick >= 1000) {
+		g_money += g_money_per_second;
+		g_last_second_tick = SDL_GetTicks();
+	}
+}
+
+// Function to render top-left info
+void render_top_info(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small)
+{
+	char buffer[64];
+	snprintf(buffer, sizeof(buffer), "Money: $%lld", g_money);
+	update_and_render_text(renderer, font_large, &g_money_tr, buffer, 10, 10, g_color_black);
+
+	snprintf(buffer, sizeof(buffer), "Click Power: $%d", g_money_per_click);
+	update_and_render_text(renderer, font_small, &g_click_power_tr, buffer, 10, 50, g_color_black);
+
+	snprintf(buffer, sizeof(buffer), "$/sec: %d", g_money_per_second);
+	update_and_render_text(renderer, font_small, &g_money_per_second_tr, buffer, 10, 70, g_color_black);
+}
+
+// Function to render upgrade buttons
+void render_upgrade_buttons(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small, SDL_Point mouse_point)
+{
+	char buffer[64];
+	for (int i = 0; i < 4; i++) {
+		int border_thickness		   = 2; // Default border thickness
+		SDL_Color current_border_color = g_color_border;
+
+		// Check for hover or recent key press
+		Uint32 current_time						  = SDL_GetTicks();
+		const Uint32 KEY_PRESS_HIGHLIGHT_DURATION = 200; // milliseconds
+
+		if (SDL_PointInRect(&mouse_point, &g_upgrades[i].rect) ||
+			current_time - g_upgrades[i].last_key_press_time < KEY_PRESS_HIGHLIGHT_DURATION) {
+			border_thickness = 4; // Thicker border on hover or key press
+			if (g_money >= g_upgrades[i].cost) {
+				current_border_color = g_color_border_affordable_hover;
+			} else {
+				current_border_color = g_color_border_unaffordable_hover;
+			}
+		}
+
+		// Draw button border
+		SDL_SetRenderDrawColor(renderer, current_border_color.r, current_border_color.g, current_border_color.b,
+							   current_border_color.a);
+		SDL_RenderFillRect(renderer, &g_upgrades[i].rect);
+
+		// Draw button background (inner rectangle)
+		SDL_Rect bg_rect = { g_upgrades[i].rect.x + border_thickness, g_upgrades[i].rect.y + border_thickness,
+							 g_upgrades[i].rect.w - (border_thickness * 2),
+							 g_upgrades[i].rect.h - (border_thickness * 2) };
+		SDL_SetRenderDrawColor(renderer, g_color_grey.r, g_color_grey.g, g_color_grey.b, g_color_grey.a);
+		SDL_RenderFillRect(renderer, &bg_rect);
+
+		// Draw main name (Q, W, E, R)
+		render_text(renderer, font_large, g_upgrades[i].name, g_upgrades[i].rect.x + 10,
+					g_upgrades[i].rect.y + (g_upgrades[i].rect.h / 2) - 16, g_color_white);
+
+		// Draw Level
+		snprintf(buffer, sizeof(buffer), "Lv.%d", g_upgrades[i].level);
+		update_and_render_text(renderer, font_small, &g_upgrade_level_tr[i], buffer,
+							   g_upgrades[i].rect.x + g_upgrades[i].rect.w - 50, g_upgrades[i].rect.y + 12,
+							   g_color_white);
+
+		// Draw Cost
+		SDL_Color cost_color = (g_money >= g_upgrades[i].cost) ? g_color_cost_affordable : g_color_cost_unaffordable;
+		snprintf(buffer, sizeof(buffer), "$%lld", g_upgrades[i].cost);
+		update_and_render_text(renderer, font_small, &g_upgrade_cost_tr[i], buffer,
+							   g_upgrades[i].rect.x + g_upgrades[i].rect.w - 50, g_upgrades[i].rect.y + 32, cost_color);
+	}
+}
+
+// Function to render the entire game scene
+void render_game(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small, SDL_Point mouse_point)
+{
+	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+	SDL_RenderClear(renderer);
+
+	render_top_info(renderer, font_large, font_small);
+	render_upgrade_buttons(renderer, font_large, font_small, mouse_point);
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -126,210 +332,57 @@ int main(int argc, char **argv)
 	TTF_Font *font_large = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28);
 	TTF_Font *font_small = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14);
 
-	// Game state
-	long long money			= 1000;
-	int money_per_click		= 1;
-	int money_per_second	= 0;
-	Uint32 last_second_tick = SDL_GetTicks();
-
-	// Text Renderers
-	TextRenderer money_tr;
-	TextRenderer click_power_tr;
-	TextRenderer money_per_second_tr;
-	TextRenderer upgrade_level_tr[4];
-	TextRenderer upgrade_cost_tr[4];
-
-	init_text_renderer(&money_tr);
-	init_text_renderer(&click_power_tr);
-	init_text_renderer(&money_per_second_tr);
+	init_text_renderer(&g_money_tr);
+	init_text_renderer(&g_click_power_tr);
+	init_text_renderer(&g_money_per_second_tr);
 	for (int i = 0; i < 4; i++) {
-		init_text_renderer(&upgrade_level_tr[i]);
-		init_text_renderer(&upgrade_cost_tr[i]);
+		init_text_renderer(&g_upgrade_level_tr[i]);
+		init_text_renderer(&g_upgrade_cost_tr[i]);
 	}
 
-	// Colors
-	SDL_Color color_white					  = { 255, 255, 255, 255 };
-	SDL_Color color_black					  = { 0, 0, 0, 255 };
-	SDL_Color color_grey					  = { 50, 50, 50, 255 };
-	SDL_Color color_border					  = { 20, 20, 20, 255 };
-	SDL_Color color_cost_affordable			  = { 100, 255, 100, 255 }; // Light Green
-	SDL_Color color_cost_unaffordable		  = { 255, 100, 100, 255 }; // Light Red
-	SDL_Color color_border_affordable_hover	  = { 0, 200, 0, 255 }; // Greenish
-	SDL_Color color_border_unaffordable_hover = { 200, 0, 0, 255 }; // Reddish
+	g_money			   = 1000;
+	g_money_per_click  = 1;
+	g_money_per_second = 0;
+	g_last_second_tick = SDL_GetTicks();
 
 	// Initialize Upgrades
-	Upgrade upgrades[4];
 	const char *names[] = { "Q", "W", "E", "R" };
 	for (int i = 0; i < 4; i++) {
-		upgrades[i].name				= names[i];
-		upgrades[i].level				= 0;
-		upgrades[i].rect.w				= 150;
-		upgrades[i].rect.h				= 60;
-		upgrades[i].rect.x				= SCREEN_WIDTH - (4 - i) * (upgrades[i].rect.w + 10) - 10;
-		upgrades[i].rect.y				= SCREEN_HEIGHT - upgrades[i].rect.h - 10;
-		upgrades[i].last_key_press_time = 0;
+		g_upgrades[i].name				  = names[i];
+		g_upgrades[i].level				  = 0;
+		g_upgrades[i].rect.w			  = 150;
+		g_upgrades[i].rect.h			  = 60;
+		g_upgrades[i].rect.x			  = SCREEN_WIDTH - (4 - i) * (g_upgrades[i].rect.w + 10) - 10;
+		g_upgrades[i].rect.y			  = SCREEN_HEIGHT - g_upgrades[i].rect.h - 10;
+		g_upgrades[i].last_key_press_time = 0;
 	}
 
-	upgrades[0].cost			= 10;
-	upgrades[0].cost_multiplier = 1.5;
+	g_upgrades[0].cost			  = 10;
+	g_upgrades[0].cost_multiplier = 1.5;
 
-	upgrades[1].cost			= 25;
-	upgrades[1].cost_multiplier = 1.6;
+	g_upgrades[1].cost			  = 25;
+	g_upgrades[1].cost_multiplier = 1.6;
 
 	// E and R are disabled for now with a high cost
-	upgrades[2].cost			= 999999999;
-	upgrades[2].cost_multiplier = 2.0;
-	upgrades[3].cost			= 999999999;
-	upgrades[3].cost_multiplier = 2.0;
+	g_upgrades[2].cost			  = 999999999;
+	g_upgrades[2].cost_multiplier = 2.0;
+	g_upgrades[3].cost			  = 999999999;
+	g_upgrades[3].cost_multiplier = 2.0;
 
 	int running = 1;
 	while (running) {
 		Uint32 frame_start_time = SDL_GetTicks();
 		// EVENT HANDLING
-		SDL_Event event;
-		while (SDL_PollEvent(&event)) {
-			if (event.type == SDL_QUIT) {
-				running = 0;
-			}
-			if (event.type == SDL_KEYDOWN) {
-				if (event.key.keysym.sym == SDLK_ESCAPE) {
-					running = 0;
-				}
-				if (event.key.keysym.sym == SDLK_a) {
-					money += money_per_click;
-				} else if (event.key.keysym.sym == SDLK_q) {
-					// Simulate click for Q upgrade
-					if (money >= upgrades[0].cost) {
-						money -= upgrades[0].cost;
-						upgrades[0].level++;
-						upgrades[0].cost *= upgrades[0].cost_multiplier;
-						money_per_click					= 1 + upgrades[0].level * 2;
-						upgrades[0].last_key_press_time = SDL_GetTicks();
-					}
-				} else if (event.key.keysym.sym == SDLK_w) {
-					// Simulate click for W upgrade
-					if (money >= upgrades[1].cost) {
-						money -= upgrades[1].cost;
-						upgrades[1].level++;
-						upgrades[1].cost *= upgrades[1].cost_multiplier;
-						money_per_second				= upgrades[1].level * 1;
-						upgrades[1].last_key_press_time = SDL_GetTicks();
-					}
-				} else if (event.key.keysym.sym == SDLK_e) {
-					// Simulate click for E upgrade
-					if (money >= upgrades[2].cost) {
-						money -= upgrades[2].cost;
-						upgrades[2].level++;
-						upgrades[2].cost *= upgrades[2].cost_multiplier;
-						upgrades[2].last_key_press_time = SDL_GetTicks();
-					}
-				} else if (event.key.keysym.sym == SDLK_r) {
-					// Simulate click for R upgrade
-					if (money >= upgrades[3].cost) {
-						money -= upgrades[3].cost;
-						upgrades[3].level++;
-						upgrades[3].cost *= upgrades[3].cost_multiplier;
-						upgrades[3].last_key_press_time = SDL_GetTicks();
-					}
-				}
-			}
-			if (event.type == SDL_MOUSEBUTTONDOWN) {
-				if (event.button.button == SDL_BUTTON_LEFT) {
-					int mouse_x			  = event.button.x;
-					int mouse_y			  = event.button.y;
-					SDL_Point mouse_point = { mouse_x, mouse_y };
-
-					for (int i = 0; i < 4; i++) {
-						if (SDL_PointInRect(&mouse_point, &upgrades[i].rect)) {
-							if (money >= upgrades[i].cost) {
-								money -= upgrades[i].cost;
-								upgrades[i].level++;
-								upgrades[i].cost *= upgrades[i].cost_multiplier;
-
-								if (i == 0) { // Q - Click Power
-									money_per_click = 1 + upgrades[i].level * 2;
-								} else if (i == 1) { // W - Passive Income
-									money_per_second = upgrades[i].level * 1;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+		process_events();
 
 		// GAME LOGIC
-		if (SDL_GetTicks() - last_second_tick >= 1000) {
-			money += money_per_second;
-			last_second_tick = SDL_GetTicks();
-		}
+		update_game_state();
 
 		// RENDERING
-		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-		SDL_RenderClear(renderer);
-
-		// Render top-left info
-		char buffer[64];
-		snprintf(buffer, sizeof(buffer), "Money: $%lld", money);
-		update_and_render_text(renderer, font_large, &money_tr, buffer, 10, 10, color_black);
-
-		snprintf(buffer, sizeof(buffer), "Click Power: $%d", money_per_click);
-		update_and_render_text(renderer, font_small, &click_power_tr, buffer, 10, 50, color_black);
-
-		snprintf(buffer, sizeof(buffer), "$/sec: %d", money_per_second);
-		update_and_render_text(renderer, font_small, &money_per_second_tr, buffer, 10, 70, color_black);
-
-		// Get mouse state for hover effect
 		int mouse_x, mouse_y;
 		SDL_GetMouseState(&mouse_x, &mouse_y);
 		SDL_Point mouse_point = { mouse_x, mouse_y };
-
-		// Render upgrade buttons
-		for (int i = 0; i < 4; i++) {
-			int border_thickness		   = 2; // Default border thickness
-			SDL_Color current_border_color = color_border;
-
-			// Check for hover or recent key press
-			Uint32 current_time						  = SDL_GetTicks();
-			const Uint32 KEY_PRESS_HIGHLIGHT_DURATION = 200; // milliseconds
-
-			if (SDL_PointInRect(&mouse_point, &upgrades[i].rect) ||
-				current_time - upgrades[i].last_key_press_time < KEY_PRESS_HIGHLIGHT_DURATION) {
-				border_thickness = 4; // Thicker border on hover or key press
-				if (money >= upgrades[i].cost) {
-					current_border_color = color_border_affordable_hover;
-				} else {
-					current_border_color = color_border_unaffordable_hover;
-				}
-			}
-
-			// Draw button border
-			SDL_SetRenderDrawColor(renderer, current_border_color.r, current_border_color.g, current_border_color.b,
-								   current_border_color.a);
-			SDL_RenderFillRect(renderer, &upgrades[i].rect);
-
-			// Draw button background (inner rectangle)
-			SDL_Rect bg_rect = { upgrades[i].rect.x + border_thickness, upgrades[i].rect.y + border_thickness,
-								 upgrades[i].rect.w - (border_thickness * 2),
-								 upgrades[i].rect.h - (border_thickness * 2) };
-			SDL_SetRenderDrawColor(renderer, color_grey.r, color_grey.g, color_grey.b, color_grey.a);
-			SDL_RenderFillRect(renderer, &bg_rect);
-
-			// Draw main name (Q, W, E, R)
-			render_text(renderer, font_large, upgrades[i].name, upgrades[i].rect.x + 10,
-						upgrades[i].rect.y + (upgrades[i].rect.h / 2) - 16, color_white);
-
-			// Draw Level
-			snprintf(buffer, sizeof(buffer), "Lv.%d", upgrades[i].level);
-			update_and_render_text(renderer, font_small, &upgrade_level_tr[i], buffer,
-								   upgrades[i].rect.x + upgrades[i].rect.w - 50, upgrades[i].rect.y + 12, color_white);
-
-			// Draw Cost
-			SDL_Color cost_color = (money >= upgrades[i].cost) ? color_cost_affordable : color_cost_unaffordable;
-			snprintf(buffer, sizeof(buffer), "$%lld", upgrades[i].cost);
-			update_and_render_text(renderer, font_small, &upgrade_cost_tr[i], buffer,
-								   upgrades[i].rect.x + upgrades[i].rect.w - 50, upgrades[i].rect.y + 32, cost_color);
-		}
+		render_game(renderer, font_large, font_small, mouse_point);
 
 		SDL_RenderPresent(renderer);
 
@@ -347,12 +400,12 @@ int main(int argc, char **argv)
 	TTF_CloseFont(font_large);
 	TTF_CloseFont(font_small);
 
-	destroy_text_renderer(&money_tr);
-	destroy_text_renderer(&click_power_tr);
-	destroy_text_renderer(&money_per_second_tr);
+	destroy_text_renderer(&g_money_tr);
+	destroy_text_renderer(&g_click_power_tr);
+	destroy_text_renderer(&g_money_per_second_tr);
 	for (int i = 0; i < 4; i++) {
-		destroy_text_renderer(&upgrade_level_tr[i]);
-		destroy_text_renderer(&upgrade_cost_tr[i]);
+		destroy_text_renderer(&g_upgrade_level_tr[i]);
+		destroy_text_renderer(&g_upgrade_cost_tr[i]);
 	}
 
 	SDL_DestroyRenderer(renderer);
