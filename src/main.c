@@ -2,8 +2,8 @@
 #include <SDL_ttf.h>
 #include <stdio.h>
 
-#define SCREEN_WIDTH  640
-#define SCREEN_HEIGHT 480
+#define SCREEN_WIDTH  1920
+#define SCREEN_HEIGHT 1080
 
 // Structure for upgrade buttons
 typedef struct {
@@ -70,7 +70,7 @@ int main(int argc, char **argv)
 		upgrades[i].level  = 0;
 		upgrades[i].rect.w = 100;
 		upgrades[i].rect.h = 50;
-		upgrades[i].rect.x = SCREEN_WIDTH - (4 - i) * (upgrades[i].rect.w + 10) + 0;
+		upgrades[i].rect.x = SCREEN_WIDTH - (4 - i) * (upgrades[i].rect.w + 10) - 10;
 		upgrades[i].rect.y = SCREEN_HEIGHT - upgrades[i].rect.h - 10;
 	}
 
