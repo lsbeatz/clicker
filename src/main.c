@@ -58,13 +58,14 @@ int main(int argc, char **argv)
 	Uint32 last_second_tick = SDL_GetTicks();
 
 	// Colors
-	SDL_Color color_white			  = { 255, 255, 255, 255 };
-	SDL_Color color_black			  = { 0, 0, 0, 255 };
-	SDL_Color color_grey			  = { 50, 50, 50, 255 };
-	SDL_Color color_grey_hover		  = { 80, 80, 80, 255 };
-	SDL_Color color_border			  = { 20, 20, 20, 255 };
-	SDL_Color color_cost_affordable	  = { 100, 255, 100, 255 }; // Light Green
-	SDL_Color color_cost_unaffordable = { 255, 100, 100, 255 }; // Light Red
+	SDL_Color color_white					  = { 255, 255, 255, 255 };
+	SDL_Color color_black					  = { 0, 0, 0, 255 };
+	SDL_Color color_grey					  = { 50, 50, 50, 255 };
+	SDL_Color color_border					  = { 20, 20, 20, 255 };
+	SDL_Color color_cost_affordable			  = { 100, 255, 100, 255 }; // Light Green
+	SDL_Color color_cost_unaffordable		  = { 255, 100, 100, 255 }; // Light Red
+	SDL_Color color_border_affordable_hover	  = { 0, 200, 0, 255 }; // Greenish
+	SDL_Color color_border_unaffordable_hover = { 200, 0, 0, 255 }; // Reddish
 
 	// Initialize Upgrades
 	Upgrade upgrades[4];
@@ -159,35 +160,45 @@ int main(int argc, char **argv)
 
 		// Render upgrade buttons
 		for (int i = 0; i < 4; i++) {
-			SDL_Color current_bg_color = color_grey;
+			int border_thickness		   = 2; // Default border thickness
+			SDL_Color current_border_color = color_border;
+
 			// Check for hover
 			if (SDL_PointInRect(&mouse_point, &upgrades[i].rect)) {
-				current_bg_color = color_grey_hover;
+				border_thickness = 4; // Thicker border on hover
+				if (money >= upgrades[i].cost) {
+					current_border_color = color_border_affordable_hover;
+				} else {
+					current_border_color = color_border_unaffordable_hover;
+				}
 			}
 
 			// Draw button border
-			SDL_SetRenderDrawColor(renderer, color_border.r, color_border.g, color_border.b, color_border.a);
+			SDL_SetRenderDrawColor(renderer, current_border_color.r, current_border_color.g, current_border_color.b,
+								   current_border_color.a);
 			SDL_RenderFillRect(renderer, &upgrades[i].rect);
 
-			// Draw button background
-			SDL_Rect bg_rect = { upgrades[i].rect.x + 2, upgrades[i].rect.y + 2, upgrades[i].rect.w - 4,
-								 upgrades[i].rect.h - 4 };
-			SDL_SetRenderDrawColor(renderer, current_bg_color.r, current_bg_color.g, current_bg_color.b,
-								   current_bg_color.a);
+			// Draw button background (inner rectangle)
+			SDL_Rect bg_rect = { upgrades[i].rect.x + border_thickness, upgrades[i].rect.y + border_thickness,
+								 upgrades[i].rect.w - (border_thickness * 2),
+								 upgrades[i].rect.h - (border_thickness * 2) };
+			SDL_SetRenderDrawColor(renderer, color_grey.r, color_grey.g, color_grey.b, color_grey.a);
 			SDL_RenderFillRect(renderer, &bg_rect);
 
 			// Draw main name (Q, W, E, R)
-			render_text(renderer, font_large, upgrades[i].name, upgrades[i].rect.x + 20,
+			render_text(renderer, font_large, upgrades[i].name, upgrades[i].rect.x + 10,
 						upgrades[i].rect.y + (upgrades[i].rect.h / 2) - 16, color_white);
 
 			// Draw Level
 			snprintf(buffer, sizeof(buffer), "Lv.%d", upgrades[i].level);
-			render_text(renderer, font_small, buffer, upgrades[i].rect.x + 80, upgrades[i].rect.y + 12, color_white);
+			render_text(renderer, font_small, buffer, upgrades[i].rect.x + upgrades[i].rect.w - 50,
+						upgrades[i].rect.y + 12, color_white);
 
 			// Draw Cost
 			SDL_Color cost_color = (money >= upgrades[i].cost) ? color_cost_affordable : color_cost_unaffordable;
 			snprintf(buffer, sizeof(buffer), "$%lld", upgrades[i].cost);
-			render_text(renderer, font_small, buffer, upgrades[i].rect.x + 80, upgrades[i].rect.y + 32, cost_color);
+			render_text(renderer, font_small, buffer, upgrades[i].rect.x + upgrades[i].rect.w - 50,
+						upgrades[i].rect.y + 32, cost_color);
 		}
 
 		SDL_RenderPresent(renderer);
