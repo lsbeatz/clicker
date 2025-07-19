@@ -1,33 +1,183 @@
 #include <SDL.h>
+#include <SDL_ttf.h>
+#include <stdio.h>
 
-int main(int argc, char** argv)
+#define SCREEN_WIDTH  640
+#define SCREEN_HEIGHT 480
+
+// Structure for upgrade buttons
+typedef struct {
+	SDL_Rect rect;
+	const char *name;
+	int level;
+	long long cost;
+	double cost_multiplier;
+} Upgrade;
+
+// Helper function to render text
+void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color)
+{
+	SDL_Surface *surface = TTF_RenderText_Solid(font, text, color);
+	if (!surface) {
+		SDL_Log("Unable to create text surface: %s", TTF_GetError());
+		return;
+	}
+	SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+	if (!texture) {
+		SDL_Log("Unable to create text texture: %s", SDL_GetError());
+		SDL_FreeSurface(surface);
+		return;
+	}
+
+	SDL_Rect dest = { x, y, surface->w, surface->h };
+	SDL_RenderCopy(renderer, texture, NULL, &dest);
+
+	SDL_FreeSurface(surface);
+	SDL_DestroyTexture(texture);
+}
+
+int main(int argc, char **argv)
 {
 	(void)argc;
 	(void)argv;
 
-	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-		SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
-		return 1;
+	SDL_Init(SDL_INIT_VIDEO);
+	TTF_Init();
+
+	SDL_Window *window	   = SDL_CreateWindow("Clicker Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+											  SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+	SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+	TTF_Font *font_large = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24);
+	TTF_Font *font_small = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12);
+
+	// Game state
+	long long money			= 0;
+	int money_per_click		= 1;
+	int money_per_second	= 0;
+	Uint32 last_second_tick = SDL_GetTicks();
+
+	// Colors
+	SDL_Color color_white = { 255, 255, 255, 255 };
+	SDL_Color color_black = { 0, 0, 0, 255 };
+	SDL_Color color_grey  = { 100, 100, 100, 255 };
+
+	// Initialize Upgrades
+	Upgrade upgrades[4];
+	const char *names[] = { "Q", "W", "E", "R" };
+	for (int i = 0; i < 4; i++) {
+		upgrades[i].name   = names[i];
+		upgrades[i].level  = 0;
+		upgrades[i].rect.w = 100;
+		upgrades[i].rect.h = 50;
+		upgrades[i].rect.x = SCREEN_WIDTH - (4 - i) * (upgrades[i].rect.w + 10) + 0;
+		upgrades[i].rect.y = SCREEN_HEIGHT - upgrades[i].rect.h - 10;
 	}
 
-	SDL_Window* window = SDL_CreateWindow(
-		"Clicker Game",
-		SDL_WINDOWPOS_UNDEFINED,
-		SDL_WINDOWPOS_UNDEFINED,
-		640,
-		480,
-		SDL_WINDOW_SHOWN
-	);
+	upgrades[0].cost			= 10;
+	upgrades[0].cost_multiplier = 1.5;
 
-	if (!window) {
-		SDL_Log("Unable to create window: %s", SDL_GetError());
-		goto out;
+	upgrades[1].cost			= 25;
+	upgrades[1].cost_multiplier = 1.6;
+
+	// E and R are disabled for now with a high cost
+	upgrades[2].cost			= 999999999;
+	upgrades[2].cost_multiplier = 2.0;
+	upgrades[3].cost			= 999999999;
+	upgrades[3].cost_multiplier = 2.0;
+
+	int running = 1;
+	while (running) {
+		// EVENT HANDLING
+		SDL_Event event;
+		while (SDL_PollEvent(&event)) {
+			if (event.type == SDL_QUIT) {
+				running = 0;
+			}
+			if (event.type == SDL_KEYDOWN) {
+				if (event.key.keysym.sym == SDLK_ESCAPE) {
+					running = 0;
+				}
+				if (event.key.keysym.sym == SDLK_a) {
+					money += money_per_click;
+				}
+			}
+			if (event.type == SDL_MOUSEBUTTONDOWN) {
+				if (event.button.button == SDL_BUTTON_LEFT) {
+					int mouse_x			  = event.button.x;
+					int mouse_y			  = event.button.y;
+					SDL_Point mouse_point = { mouse_x, mouse_y };
+
+					for (int i = 0; i < 4; i++) {
+						if (SDL_PointInRect(&mouse_point, &upgrades[i].rect)) {
+							if (money >= upgrades[i].cost) {
+								money -= upgrades[i].cost;
+								upgrades[i].level++;
+								upgrades[i].cost *= upgrades[i].cost_multiplier;
+
+								if (i == 0) { // Q - Click Power
+									money_per_click = 1 + upgrades[i].level;
+								} else if (i == 1) { // W - Passive Income
+									money_per_second = upgrades[i].level;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// GAME LOGIC
+		if (SDL_GetTicks() - last_second_tick >= 1000) {
+			money += money_per_second;
+			last_second_tick = SDL_GetTicks();
+		}
+
+		// RENDERING
+		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+		SDL_RenderClear(renderer);
+
+		// Render top-left info
+		char buffer[64];
+		snprintf(buffer, sizeof(buffer), "Money: $%lld", money);
+		render_text(renderer, font_large, buffer, 10, 10, color_black);
+
+		snprintf(buffer, sizeof(buffer), "Click Power: $%d", money_per_click);
+		render_text(renderer, font_small, buffer, 10, 40, color_black);
+
+		snprintf(buffer, sizeof(buffer), "$/sec: %d", money_per_second);
+		render_text(renderer, font_small, buffer, 10, 55, color_black);
+
+		// Render upgrade buttons
+		for (int i = 0; i < 4; i++) {
+			// Draw button background
+			SDL_SetRenderDrawColor(renderer, color_grey.r, color_grey.g, color_grey.b, color_grey.a);
+			SDL_RenderFillRect(renderer, &upgrades[i].rect);
+
+			// Draw main name (Q, W, E, R)
+			render_text(renderer, font_large, upgrades[i].name, upgrades[i].rect.x + (upgrades[i].rect.w / 2) - 8,
+						upgrades[i].rect.y + (upgrades[i].rect.h / 2) - 12, color_white);
+
+			// Draw Level
+			snprintf(buffer, sizeof(buffer), "Lv.%d", upgrades[i].level);
+			render_text(renderer, font_small, buffer, upgrades[i].rect.x + 5, upgrades[i].rect.y + 5, color_white);
+
+			// Draw Cost
+			snprintf(buffer, sizeof(buffer), "$%lld", upgrades[i].cost);
+			render_text(renderer, font_small, buffer, upgrades[i].rect.x + 5,
+						upgrades[i].rect.y + upgrades[i].rect.h - 20, color_white);
+		}
+
+		SDL_RenderPresent(renderer);
+		SDL_Delay(16); // Cap frame rate
 	}
 
-	SDL_Delay(1000);
+	// CLEANUP
+	TTF_CloseFont(font_large);
+	TTF_CloseFont(font_small);
+	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
-
-out:
+	TTF_Quit();
 	SDL_Quit();
 
 	return 0;
