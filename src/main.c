@@ -1,6 +1,8 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 #define SCREEN_WIDTH  1920
 #define SCREEN_HEIGHT 1080
@@ -13,6 +15,78 @@ typedef struct {
 	long long cost;
 	double cost_multiplier;
 } Upgrade;
+
+// Structure for dynamic text rendering
+typedef struct {
+	SDL_Texture *texture;
+	SDL_Rect rect;
+	char *last_text;
+} TextRenderer;
+
+// Function to initialize TextRenderer
+void init_text_renderer(TextRenderer *tr)
+{
+	tr->texture	  = NULL;
+	tr->last_text = NULL;
+}
+
+// Function to update and render dynamic text
+void update_and_render_text(SDL_Renderer *renderer,
+							TTF_Font *font,
+							TextRenderer *tr,
+							const char *new_text,
+							int x,
+							int y,
+							SDL_Color color)
+{
+	if (!tr->last_text || strcmp(tr->last_text, new_text) != 0) {
+		// Text has changed, destroy old texture and create new one
+		if (tr->texture) {
+			SDL_DestroyTexture(tr->texture);
+			tr->texture = NULL;
+		}
+		if (tr->last_text) {
+			free(tr->last_text);
+			tr->last_text = NULL;
+		}
+
+		SDL_Surface *surface = TTF_RenderText_Solid(font, new_text, color);
+		if (!surface) {
+			SDL_Log("Unable to create text surface: %s", TTF_GetError());
+			return;
+		}
+		tr->texture = SDL_CreateTextureFromSurface(renderer, surface);
+		if (!tr->texture) {
+			SDL_Log("Unable to create text texture: %s", TTF_GetError());
+			SDL_FreeSurface(surface);
+			return;
+		}
+
+		tr->rect.x = x;
+		tr->rect.y = y;
+		tr->rect.w = surface->w;
+		tr->rect.h = surface->h;
+
+		tr->last_text = strdup(new_text);
+		SDL_FreeSurface(surface);
+	}
+
+	// Render the texture
+	SDL_RenderCopy(renderer, tr->texture, NULL, &tr->rect);
+}
+
+// Function to destroy TextRenderer resources
+void destroy_text_renderer(TextRenderer *tr)
+{
+	if (tr->texture) {
+		SDL_DestroyTexture(tr->texture);
+		tr->texture = NULL;
+	}
+	if (tr->last_text) {
+		free(tr->last_text);
+		tr->last_text = NULL;
+	}
+}
 
 // Helper function to render text
 void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color)
@@ -57,6 +131,21 @@ int main(int argc, char **argv)
 	int money_per_second	= 0;
 	Uint32 last_second_tick = SDL_GetTicks();
 
+	// Text Renderers
+	TextRenderer money_tr;
+	TextRenderer click_power_tr;
+	TextRenderer money_per_second_tr;
+	TextRenderer upgrade_level_tr[4];
+	TextRenderer upgrade_cost_tr[4];
+
+	init_text_renderer(&money_tr);
+	init_text_renderer(&click_power_tr);
+	init_text_renderer(&money_per_second_tr);
+	for (int i = 0; i < 4; i++) {
+		init_text_renderer(&upgrade_level_tr[i]);
+		init_text_renderer(&upgrade_cost_tr[i]);
+	}
+
 	// Colors
 	SDL_Color color_white					  = { 255, 255, 255, 255 };
 	SDL_Color color_black					  = { 0, 0, 0, 255 };
@@ -93,6 +182,7 @@ int main(int argc, char **argv)
 
 	int running = 1;
 	while (running) {
+		Uint32 frame_start_time = SDL_GetTicks();
 		// EVENT HANDLING
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
@@ -145,13 +235,13 @@ int main(int argc, char **argv)
 		// Render top-left info
 		char buffer[64];
 		snprintf(buffer, sizeof(buffer), "Money: $%lld", money);
-		render_text(renderer, font_large, buffer, 10, 10, color_black);
+		update_and_render_text(renderer, font_large, &money_tr, buffer, 10, 10, color_black);
 
 		snprintf(buffer, sizeof(buffer), "Click Power: $%d", money_per_click);
-		render_text(renderer, font_small, buffer, 10, 50, color_black);
+		update_and_render_text(renderer, font_small, &click_power_tr, buffer, 10, 50, color_black);
 
 		snprintf(buffer, sizeof(buffer), "$/sec: %d", money_per_second);
-		render_text(renderer, font_small, buffer, 10, 70, color_black);
+		update_and_render_text(renderer, font_small, &money_per_second_tr, buffer, 10, 70, color_black);
 
 		// Get mouse state for hover effect
 		int mouse_x, mouse_y;
@@ -191,23 +281,40 @@ int main(int argc, char **argv)
 
 			// Draw Level
 			snprintf(buffer, sizeof(buffer), "Lv.%d", upgrades[i].level);
-			render_text(renderer, font_small, buffer, upgrades[i].rect.x + upgrades[i].rect.w - 50,
-						upgrades[i].rect.y + 12, color_white);
+			update_and_render_text(renderer, font_small, &upgrade_level_tr[i], buffer,
+								   upgrades[i].rect.x + upgrades[i].rect.w - 50, upgrades[i].rect.y + 12, color_white);
 
 			// Draw Cost
 			SDL_Color cost_color = (money >= upgrades[i].cost) ? color_cost_affordable : color_cost_unaffordable;
 			snprintf(buffer, sizeof(buffer), "$%lld", upgrades[i].cost);
-			render_text(renderer, font_small, buffer, upgrades[i].rect.x + upgrades[i].rect.w - 50,
-						upgrades[i].rect.y + 32, cost_color);
+			update_and_render_text(renderer, font_small, &upgrade_cost_tr[i], buffer,
+								   upgrades[i].rect.x + upgrades[i].rect.w - 50, upgrades[i].rect.y + 32, cost_color);
 		}
 
 		SDL_RenderPresent(renderer);
-		SDL_Delay(16); // Cap frame rate
+
+		// Cap frame rate
+		const int TARGET_FPS	 = 60;
+		const int FRAME_DELAY_MS = 1000 / TARGET_FPS;
+
+		Uint32 frame_time = SDL_GetTicks() - frame_start_time;
+		if (frame_time < (Uint32)FRAME_DELAY_MS) {
+			SDL_Delay(FRAME_DELAY_MS - frame_time);
+		}
 	}
 
 	// CLEANUP
 	TTF_CloseFont(font_large);
 	TTF_CloseFont(font_small);
+
+	destroy_text_renderer(&money_tr);
+	destroy_text_renderer(&click_power_tr);
+	destroy_text_renderer(&money_per_second_tr);
+	for (int i = 0; i < 4; i++) {
+		destroy_text_renderer(&upgrade_level_tr[i]);
+		destroy_text_renderer(&upgrade_cost_tr[i]);
+	}
+
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
 	TTF_Quit();
