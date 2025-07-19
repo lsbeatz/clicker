@@ -14,6 +14,7 @@ typedef struct {
 	int level;
 	long long cost;
 	double cost_multiplier;
+	Uint32 last_key_press_time;
 } Upgrade;
 
 // Structure for dynamic text rendering
@@ -160,12 +161,13 @@ int main(int argc, char **argv)
 	Upgrade upgrades[4];
 	const char *names[] = { "Q", "W", "E", "R" };
 	for (int i = 0; i < 4; i++) {
-		upgrades[i].name   = names[i];
-		upgrades[i].level  = 0;
-		upgrades[i].rect.w = 150;
-		upgrades[i].rect.h = 60;
-		upgrades[i].rect.x = SCREEN_WIDTH - (4 - i) * (upgrades[i].rect.w + 10) - 10;
-		upgrades[i].rect.y = SCREEN_HEIGHT - upgrades[i].rect.h - 10;
+		upgrades[i].name				= names[i];
+		upgrades[i].level				= 0;
+		upgrades[i].rect.w				= 150;
+		upgrades[i].rect.h				= 60;
+		upgrades[i].rect.x				= SCREEN_WIDTH - (4 - i) * (upgrades[i].rect.w + 10) - 10;
+		upgrades[i].rect.y				= SCREEN_HEIGHT - upgrades[i].rect.h - 10;
+		upgrades[i].last_key_press_time = 0;
 	}
 
 	upgrades[0].cost			= 10;
@@ -195,6 +197,40 @@ int main(int argc, char **argv)
 				}
 				if (event.key.keysym.sym == SDLK_a) {
 					money += money_per_click;
+				} else if (event.key.keysym.sym == SDLK_q) {
+					// Simulate click for Q upgrade
+					if (money >= upgrades[0].cost) {
+						money -= upgrades[0].cost;
+						upgrades[0].level++;
+						upgrades[0].cost *= upgrades[0].cost_multiplier;
+						money_per_click					= 1 + upgrades[0].level * 2;
+						upgrades[0].last_key_press_time = SDL_GetTicks();
+					}
+				} else if (event.key.keysym.sym == SDLK_w) {
+					// Simulate click for W upgrade
+					if (money >= upgrades[1].cost) {
+						money -= upgrades[1].cost;
+						upgrades[1].level++;
+						upgrades[1].cost *= upgrades[1].cost_multiplier;
+						money_per_second				= upgrades[1].level * 1;
+						upgrades[1].last_key_press_time = SDL_GetTicks();
+					}
+				} else if (event.key.keysym.sym == SDLK_e) {
+					// Simulate click for E upgrade
+					if (money >= upgrades[2].cost) {
+						money -= upgrades[2].cost;
+						upgrades[2].level++;
+						upgrades[2].cost *= upgrades[2].cost_multiplier;
+						upgrades[2].last_key_press_time = SDL_GetTicks();
+					}
+				} else if (event.key.keysym.sym == SDLK_r) {
+					// Simulate click for R upgrade
+					if (money >= upgrades[3].cost) {
+						money -= upgrades[3].cost;
+						upgrades[3].level++;
+						upgrades[3].cost *= upgrades[3].cost_multiplier;
+						upgrades[3].last_key_press_time = SDL_GetTicks();
+					}
 				}
 			}
 			if (event.type == SDL_MOUSEBUTTONDOWN) {
@@ -253,9 +289,13 @@ int main(int argc, char **argv)
 			int border_thickness		   = 2; // Default border thickness
 			SDL_Color current_border_color = color_border;
 
-			// Check for hover
-			if (SDL_PointInRect(&mouse_point, &upgrades[i].rect)) {
-				border_thickness = 4; // Thicker border on hover
+			// Check for hover or recent key press
+			Uint32 current_time						  = SDL_GetTicks();
+			const Uint32 KEY_PRESS_HIGHLIGHT_DURATION = 200; // milliseconds
+
+			if (SDL_PointInRect(&mouse_point, &upgrades[i].rect) ||
+				current_time - upgrades[i].last_key_press_time < KEY_PRESS_HIGHLIGHT_DURATION) {
+				border_thickness = 4; // Thicker border on hover or key press
 				if (money >= upgrades[i].cost) {
 					current_border_color = color_border_affordable_hover;
 				} else {
