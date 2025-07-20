@@ -17,6 +17,20 @@ typedef struct {
 	Uint32 last_key_press_time;
 } Upgrade;
 
+// Structure for floating text animations
+typedef struct {
+	SDL_Texture *texture;
+	SDL_Rect rect;
+	char *text_content;
+	SDL_Color color;
+	Uint32 start_time;
+	int velocity_y; // Pixels per second
+	int active; // 1 if active, 0 if not
+} FloatingText;
+
+#define MAX_FLOATING_TEXTS 50
+FloatingText g_floating_texts[MAX_FLOATING_TEXTS];
+
 // Structure for dynamic text rendering
 typedef struct {
 	SDL_Texture *texture;
@@ -117,6 +131,14 @@ void destroy_text_renderer(TextRenderer *tr)
 	}
 }
 
+// Function to initialize FloatingText
+void init_floating_text(FloatingText *ft)
+{
+	ft->texture		 = NULL;
+	ft->text_content = NULL;
+	ft->active		 = 0;
+}
+
 // Helper function to render text
 void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x, int y, SDL_Color color)
 {
@@ -140,19 +162,69 @@ void render_text(SDL_Renderer *renderer, TTF_Font *font, const char *text, int x
 }
 
 // Function Prototypes for refactoring
-void handle_keyboard_event(SDL_Event *event);
+void handle_keyboard_event(SDL_Event *event, SDL_Renderer *renderer, TTF_Font *font_small);
 void handle_mouse_button_down_event(SDL_Event *event);
-void process_events();
-void update_game_state();
+void process_events(SDL_Renderer *renderer, TTF_Font *font_small);
+void update_game_state(Uint32 delta_time);
 void render_top_info(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small);
 void render_upgrade_buttons(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small, SDL_Point mouse_point);
 void render_game(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_small, SDL_Point mouse_point);
 
+// Function to render floating texts
+void render_floating_texts(SDL_Renderer *renderer)
+{
+	for (int i = 0; i < MAX_FLOATING_TEXTS; i++) {
+		FloatingText *ft = &g_floating_texts[i];
+		if (ft->active) {
+			SDL_SetTextureColorMod(ft->texture, ft->color.r, ft->color.g, ft->color.b);
+			SDL_SetTextureAlphaMod(ft->texture, ft->color.a);
+			SDL_RenderCopy(renderer, ft->texture, NULL, &ft->rect);
+		}
+	}
+}
+
+// Function to create a new floating text
+void create_floating_text(SDL_Renderer *renderer, TTF_Font *font, long long value, SDL_Color color)
+{
+	for (int i = 0; i < MAX_FLOATING_TEXTS; i++) {
+		if (!g_floating_texts[i].active) {
+			FloatingText *ft = &g_floating_texts[i];
+			char buffer[32];
+			snprintf(buffer, sizeof(buffer), "+$%lld", value);
+
+			SDL_Surface *surface = TTF_RenderText_Solid(font, buffer, color);
+			if (!surface) {
+				SDL_Log("Unable to create floating text surface: %s", TTF_GetError());
+				return;
+			}
+			ft->texture = SDL_CreateTextureFromSurface(renderer, surface);
+			if (!ft->texture) {
+				SDL_Log("Unable to create floating text texture: %s", TTF_GetError());
+				SDL_FreeSurface(surface);
+				return;
+			}
+
+			ft->rect.w		 = surface->w;
+			ft->rect.h		 = surface->h;
+			ft->rect.x		 = rand() % (SCREEN_WIDTH - ft->rect.w); // Random X position
+			ft->rect.y		 = rand() % (SCREEN_HEIGHT - ft->rect.h); // Random Y position
+			ft->color		 = color;
+			ft->start_time	 = SDL_GetTicks();
+			ft->velocity_y	 = -50; // Move up 50 pixels per second
+			ft->active		 = 1;
+			ft->text_content = strdup(buffer);
+			SDL_FreeSurface(surface);
+			return;
+		}
+	}
+}
+
 // Function to handle keyboard events
-void handle_keyboard_event(SDL_Event *event)
+void handle_keyboard_event(SDL_Event *event, SDL_Renderer *renderer, TTF_Font *font_small)
 {
 	if (event->key.keysym.sym == SDLK_a) {
 		g_money += g_money_per_click;
+		create_floating_text(renderer, font_small, g_money_per_click, g_color_black);
 	} else if (event->key.keysym.sym == SDLK_q) {
 		// Simulate click for Q upgrade
 		if (g_money >= g_upgrades[0].cost) {
@@ -217,7 +289,7 @@ void handle_mouse_button_down_event(SDL_Event *event)
 }
 
 // Function to process all events
-void process_events()
+void process_events(SDL_Renderer *renderer, TTF_Font *font_small)
 {
 	SDL_Event event;
 	while (SDL_PollEvent(&event)) {
@@ -228,7 +300,7 @@ void process_events()
 			if (event.key.keysym.sym == SDLK_ESCAPE) {
 				exit(0); // Exit the game
 			}
-			handle_keyboard_event(&event);
+			handle_keyboard_event(&event, renderer, font_small);
 		}
 		if (event.type == SDL_MOUSEBUTTONDOWN) {
 			handle_mouse_button_down_event(&event);
@@ -237,11 +309,28 @@ void process_events()
 }
 
 // Function to update game state
-void update_game_state()
+void update_game_state(Uint32 delta_time)
 {
 	if (SDL_GetTicks() - g_last_second_tick >= 1000) {
 		g_money += g_money_per_second;
 		g_last_second_tick = SDL_GetTicks();
+	}
+
+	// Update floating texts
+	Uint32 current_time = SDL_GetTicks();
+	for (int i = 0; i < MAX_FLOATING_TEXTS; i++) {
+		FloatingText *ft = &g_floating_texts[i];
+		if (ft->active) {
+			// Move text upwards
+			ft->rect.y += (int)(ft->velocity_y * (delta_time / 1000.0f));
+
+			// Deactivate after 1 second
+			if (current_time - ft->start_time >= 1000) {
+				SDL_DestroyTexture(ft->texture);
+				free(ft->text_content);
+				init_floating_text(ft);
+			}
+		}
 	}
 }
 
@@ -326,6 +415,7 @@ void render_game(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Font *font_sm
 
 	render_top_info(renderer, font_large, font_small);
 	render_upgrade_buttons(renderer, font_large, font_small, mouse_point);
+	render_floating_texts(renderer);
 }
 
 int main(int argc, char **argv)
@@ -349,6 +439,10 @@ int main(int argc, char **argv)
 	for (int i = 0; i < 4; i++) {
 		init_text_renderer(&g_upgrade_level_tr[i]);
 		init_text_renderer(&g_upgrade_cost_tr[i]);
+	}
+
+	for (int i = 0; i < MAX_FLOATING_TEXTS; i++) {
+		init_floating_text(&g_floating_texts[i]);
 	}
 
 	g_money			   = 1000;
@@ -380,14 +474,17 @@ int main(int argc, char **argv)
 	g_upgrades[3].cost			  = 999999999;
 	g_upgrades[3].cost_multiplier = 2.0;
 
-	int running = 1;
+	int running			   = 1;
+	Uint32 last_frame_time = SDL_GetTicks();
 	while (running) {
-		Uint32 frame_start_time = SDL_GetTicks();
+		Uint32 current_time = SDL_GetTicks();
+		Uint32 delta_time	= current_time - last_frame_time;
+
 		// EVENT HANDLING
-		process_events();
+		process_events(renderer, font_small);
 
 		// GAME LOGIC
-		update_game_state();
+		update_game_state(delta_time);
 
 		// RENDERING
 		int mouse_x, mouse_y;
@@ -401,10 +498,11 @@ int main(int argc, char **argv)
 		const int TARGET_FPS	 = 60;
 		const int FRAME_DELAY_MS = 1000 / TARGET_FPS;
 
-		Uint32 frame_time = SDL_GetTicks() - frame_start_time;
+		Uint32 frame_time = SDL_GetTicks() - current_time;
 		if (frame_time < (Uint32)FRAME_DELAY_MS) {
 			SDL_Delay(FRAME_DELAY_MS - frame_time);
 		}
+		last_frame_time = current_time;
 	}
 
 	// CLEANUP
@@ -417,6 +515,13 @@ int main(int argc, char **argv)
 	for (int i = 0; i < 4; i++) {
 		destroy_text_renderer(&g_upgrade_level_tr[i]);
 		destroy_text_renderer(&g_upgrade_cost_tr[i]);
+	}
+
+	for (int i = 0; i < MAX_FLOATING_TEXTS; i++) {
+		if (g_floating_texts[i].active) {
+			SDL_DestroyTexture(g_floating_texts[i].texture);
+			free(g_floating_texts[i].text_content);
+		}
 	}
 
 	SDL_DestroyRenderer(renderer);
