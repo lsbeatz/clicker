@@ -22,6 +22,7 @@ typedef struct {
 	SDL_Texture *texture;
 	SDL_Rect rect;
 	char *last_text;
+	SDL_Color last_color;
 } TextRenderer;
 
 // Global Game State
@@ -51,8 +52,9 @@ SDL_Color g_color_border_unaffordable_hover = { 200, 0, 0, 255 }; // Reddish
 // Function to initialize TextRenderer
 void init_text_renderer(TextRenderer *tr)
 {
-	tr->texture	  = NULL;
-	tr->last_text = NULL;
+	tr->texture	   = NULL;
+	tr->last_text  = NULL;
+	tr->last_color = (SDL_Color){ 0, 0, 0, 0 }; // Initialize with a default color
 }
 
 // Function to update and render dynamic text
@@ -64,8 +66,9 @@ void update_and_render_text(SDL_Renderer *renderer,
 							int y,
 							SDL_Color color)
 {
-	if (!tr->last_text || strcmp(tr->last_text, new_text) != 0) {
-		// Text has changed, destroy old texture and create new one
+	if (!tr->last_text || strcmp(tr->last_text, new_text) != 0 || tr->last_color.r != color.r ||
+		tr->last_color.g != color.g || tr->last_color.b != color.b || tr->last_color.a != color.a) {
+		// Text or color has changed, destroy old texture and create new one
 		if (tr->texture) {
 			SDL_DestroyTexture(tr->texture);
 			tr->texture = NULL;
@@ -92,7 +95,8 @@ void update_and_render_text(SDL_Renderer *renderer,
 		tr->rect.w = surface->w;
 		tr->rect.h = surface->h;
 
-		tr->last_text = strdup(new_text);
+		tr->last_text  = strdup(new_text);
+		tr->last_color = color; // Store the new color
 		SDL_FreeSurface(surface);
 	}
 
@@ -260,10 +264,17 @@ void render_upgrade_buttons(SDL_Renderer *renderer, TTF_Font *font_large, TTF_Fo
 {
 	char buffer[64];
 	for (int i = 0; i < 4; i++) {
-		int border_thickness		   = 2; // Default border thickness
-		SDL_Color current_border_color = g_color_border;
+		int border_thickness = 2; // Default border thickness
+		SDL_Color current_border_color; // This will be determined based on affordability or hover
 
-		// Check for hover or recent key press
+		// Determine the base border color based on affordability
+		if (g_money >= g_upgrades[i].cost) {
+			current_border_color = g_color_cost_affordable; // Light Green for affordable
+		} else {
+			current_border_color = g_color_cost_unaffordable; // Light Red for unaffordable
+		}
+
+		// Check for hover or recent key press, and override border color if applicable
 		Uint32 current_time						  = SDL_GetTicks();
 		const Uint32 KEY_PRESS_HIGHLIGHT_DURATION = 200; // milliseconds
 
